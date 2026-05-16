@@ -13,6 +13,7 @@ load_dotenv()
 app = FastAPI()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+BASE_URL = os.getenv("BASE_URL")
 
 # ✅ Create uploads folder
 if not os.path.exists("uploads"):
@@ -166,7 +167,11 @@ def get_categories():
         rows = cur.fetchall()
 
         return [
-            {"id": str(row[0]), "name": row[1], "image": row[2]}
+            {
+                "id": str(row[0]),
+                "name": row[1],
+                "image": f"{BASE_URL}/uploads/{row[2]}" if row[2] else None
+            }
             for row in rows
         ]
     finally:
@@ -212,7 +217,7 @@ def get_products(category_id: str):
                 "id": str(row[0]),
                 "name": row[1],
                 "price": float(row[2]),
-                "image_url": f"http://10.250.164.149:8000/uploads/{row[3]}" if row[3] else None
+                "image_url": f"{BASE_URL}/uploads/{row[3]}" if row[3] else None
             }
             for row in rows
         ]
@@ -241,7 +246,7 @@ def add_product(product: ProductCreate):
 
 
 # -----------------------------
-# ✅ Place Order
+# ✅ Orders
 # -----------------------------
 @app.post("/place-order")
 def place_order(order: OrderCreate):
@@ -267,29 +272,18 @@ def place_order(order: OrderCreate):
             "order_id": str(order_id)
         }
 
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
     finally:
         cur.close()
         conn.close()
 
 
-# -----------------------------
-# ✅ Customer Orders
-# -----------------------------
 @app.get("/orders/{user_id}")
 def get_orders(user_id: str):
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT 
-                o.id,
-                o.total_amount,
-                o.status,
-                o.created_at,
-                p.image_url
+            SELECT o.id, o.total_amount, o.status, o.created_at, p.image_url
             FROM orders o
             JOIN order_items oi ON o.id = oi.order_id
             JOIN products p ON oi.product_id = p.id
@@ -307,107 +301,11 @@ def get_orders(user_id: str):
                     "total_amount": float(row[1]),
                     "status": row[2],
                     "date": str(row[3]),
-                    "product_image": f"http://10.250.164.149:8000/uploads/{row[4]}" if row[4] else None
+                    "product_image": f"{BASE_URL}/uploads/{row[4]}" if row[4] else None
                 }
 
         return list(orders.values())
 
-    finally:
-        cur.close()
-        conn.close()
-
-
-# -----------------------------
-# ✅ ADMIN: Get All Orders
-# -----------------------------
-@app.get("/admin/orders")
-def get_all_orders():
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT 
-                o.id,
-                u.name,
-                o.total_amount,
-                o.status,
-                o.created_at
-            FROM orders o
-            JOIN users u ON o.user_id = u.id
-            ORDER BY o.created_at DESC
-        """)
-        rows = cur.fetchall()
-
-        return [
-            {
-                "order_id": str(row[0]),
-                "customer_name": row[1],
-                "total_amount": float(row[2]),
-                "status": row[3],
-                "date": str(row[4])
-            }
-            for row in rows
-        ]
-    finally:
-        cur.close()
-        conn.close()
-
-
-# -----------------------------
-# ✅ ADMIN: Update Order Status
-# -----------------------------
-@app.put("/admin/update-order-status/{order_id}")
-def update_order_status(order_id: str, status_update: OrderStatusUpdate):
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            "UPDATE orders SET status=%s WHERE id=%s",
-            (status_update.status, order_id),
-        )
-
-        if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Order not found")
-
-        conn.commit()
-
-        return {"message": "Order Status Updated ✅"}
-
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
-
-
-# -----------------------------
-# ✅ ADMIN: Order Details
-# -----------------------------
-@app.get("/admin/order-details/{order_id}")
-def get_order_details(order_id: str):
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT 
-                p.name,
-                p.image_url,
-                oi.quantity
-            FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            WHERE oi.order_id = %s
-        """, (order_id,))
-        rows = cur.fetchall()
-
-        return [
-            {
-                "product_name": row[0],
-                "image": f"http://10.250.164.149:8000/uploads/{row[1]}" if row[1] else None,
-                "quantity": row[2]
-            }
-            for row in rows
-        ]
     finally:
         cur.close()
         conn.close()
