@@ -309,3 +309,95 @@ def get_orders(user_id: str):
     finally:
         cur.close()
         conn.close()
+
+        # -----------------------------
+# ✅ ADMIN: Get All Orders
+# -----------------------------
+@app.get("/admin/orders")
+def get_all_orders():
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT 
+                o.id,
+                u.name,
+                o.total_amount,
+                o.status,
+                o.created_at
+            FROM orders o
+            JOIN users u ON o.user_id = u.id
+            ORDER BY o.created_at DESC
+        """)
+        rows = cur.fetchall()
+
+        return [
+            {
+                "order_id": str(row[0]),
+                "customer_name": row[1],
+                "total_amount": float(row[2]),
+                "status": row[3],
+                "date": str(row[4])
+            }
+            for row in rows
+        ]
+    finally:
+        cur.close()
+        conn.close()
+
+
+# -----------------------------
+# ✅ ADMIN: Update Order Status
+# -----------------------------
+@app.put("/admin/update-order-status/{order_id}")
+def update_order_status(order_id: str, status_update: OrderStatusUpdate):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE orders SET status=%s WHERE id=%s",
+            (status_update.status, order_id),
+        )
+
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        conn.commit()
+
+        return {"message": "Order Status Updated ✅"}
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# -----------------------------
+# ✅ ADMIN: Order Details
+# -----------------------------
+@app.get("/admin/order-details/{order_id}")
+def get_order_details(order_id: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT 
+                p.name,
+                p.image_url,
+                oi.quantity
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            WHERE oi.order_id = %s
+        """, (order_id,))
+        rows = cur.fetchall()
+
+        return [
+            {
+                "product_name": row[0],
+                "image": f"{BASE_URL}/uploads/{row[1]}" if row[1] else None,
+                "quantity": row[2]
+            }
+            for row in rows
+        ]
+    finally:
+        cur.close()
+        conn.close()
